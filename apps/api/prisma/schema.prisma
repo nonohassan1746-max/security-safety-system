@@ -1,0 +1,408 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  userRoles   UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  username     String    @unique
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  phone        String?
+  isActive     Boolean   @default(true)
+  isSuperAdmin Boolean   @default(false)
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  createdBy           User?           @relation("UserCreatedBy", fields: [createdById], references: [id])
+  createdUsers        User[]          @relation("UserCreatedBy")
+  userRoles           UserRole[]
+  employee            Employee?
+  notifications       Notification[]
+  announcementsSent   Announcement[]  @relation("AnnouncementSender")
+  announcementReads   AnnouncementRead[]
+  deviceTokens        DeviceToken[]
+  geofenceAlerts      GeofenceAlert[] @relation("GeofenceAlertManager")
+  auditLogs           AuditLog[]      @relation("AuditChangedBy")
+
+  @@map("users")
+}
+
+model UserRole {
+  userId     String
+  roleId     String
+  assignedBy String?
+  assignedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  employees Employee[]
+
+  @@map("departments")
+}
+
+model Employee {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  employeeNumber String?   @unique
+  departmentId   String?
+  jobTitle       String?
+  hireDate       DateTime?
+  managerId      String?
+  status         String    @default("active")
+  isDeleted      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department     Department?     @relation(fields: [departmentId], references: [id])
+  manager        Employee?       @relation("EmployeeManager", fields: [managerId], references: [id])
+  subordinates   Employee[]      @relation("EmployeeManager")
+  shiftAssignments ShiftAssignment[]
+  attendanceLogs   AttendanceLog[]
+  leaveRequests    LeaveRequest[]
+  violations       Violation[]
+  incidents        Incident[]
+  geofenceAlerts   GeofenceAlert[]
+
+  @@map("employees")
+}
+
+model Location {
+  id          String   @id @default(uuid())
+  name        String
+  address     String?
+  latitude    Float?
+  longitude   Float?
+  description String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  zones     AttendanceZone[]
+  incidents Incident[]
+
+  @@map("locations")
+}
+
+model AttendanceZone {
+  id           String   @id @default(uuid())
+  locationId   String
+  name         String
+  latitude     Float
+  longitude    Float
+  radiusMeters Int      @default(100)
+  isActive     Boolean  @default(true)
+  createdById  String?
+  createdAt    DateTime @default(now())
+
+  location       Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  attendanceLogs AttendanceLog[]
+
+  @@map("attendance_zones")
+}
+
+model Shift {
+  id           String   @id @default(uuid())
+  name         String
+  code         String   @unique
+  startTime    String
+  endTime      String
+  graceMinutes Int      @default(10)
+  isActive     Boolean  @default(true)
+  description  String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+
+  assignments    ShiftAssignment[]
+  attendanceLogs AttendanceLog[]
+
+  @@map("shifts")
+}
+
+model ShiftAssignment {
+  id          String    @id @default(uuid())
+  employeeId  String
+  shiftId     String
+  startDate   DateTime
+  endDate     DateTime?
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift    Shift    @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+
+  attendanceLogs AttendanceLog[]
+
+  @@map("shift_assignments")
+}
+
+model AttendanceLog {
+  id                String    @id @default(uuid())
+  employeeId        String
+  shiftId           String?
+  shiftAssignmentId String
+  attendanceZoneId  String?
+  workDate          DateTime  @db.Date
+  checkInTime       DateTime?
+  checkOutTime      DateTime?
+  checkInLat        Float?
+  checkInLon        Float?
+  checkInAccuracyM  Float?
+  checkOutLat       Float?
+  checkOutLon       Float?
+  checkOutAccuracyM Float?
+  status            String    @default("pending")
+  reason            String?
+  createdById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  employee       Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift          Shift?          @relation(fields: [shiftId], references: [id])
+  shiftAssignment ShiftAssignment @relation(fields: [shiftAssignmentId], references: [id], onDelete: Cascade)
+  attendanceZone  AttendanceZone? @relation(fields: [attendanceZoneId], references: [id])
+  geofenceAlert   GeofenceAlert?
+
+  @@unique([shiftAssignmentId, workDate])
+  @@index([employeeId, workDate])
+  @@map("attendance_logs")
+}
+
+model LeaveRequest {
+  id            String    @id @default(uuid())
+  employeeId    String
+  leaveType     String
+  startDateTime DateTime
+  endDateTime   DateTime?
+  reason        String
+  status        String    @default("pending")
+  reviewedById  String?
+  reviewNote    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("leave_requests")
+}
+
+model ViolationType {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  violations Violation[]
+
+  @@map("violation_types")
+}
+
+model Violation {
+  id              String    @id @default(uuid())
+  employeeId      String
+  violationTypeId String
+  violationTitle  String
+  description     String
+  violationDate   DateTime
+  status          String    @default("new")
+  createdById     String?
+  reviewedById    String?
+  reviewNote      String?
+  attachmentUrl   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  violationType ViolationType @relation(fields: [violationTypeId], references: [id])
+
+  @@map("violations")
+}
+
+model Incident {
+  id             String    @id @default(uuid())
+  title          String
+  description    String
+  incidentType   String
+  severity       String    @default("medium")
+  reportedById   String?
+  employeeId     String?
+  locationId     String?
+  occurredAt     DateTime
+  status         String    @default("open")
+  assignedToId   String?
+  resolutionNote String?
+  attachmentUrl  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  employee Employee? @relation(fields: [employeeId], references: [id])
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@map("incidents")
+}
+
+model IncidentStatusHistory {
+  id          String   @id @default(uuid())
+  incidentId  String
+  oldStatus   String?
+  newStatus   String
+  changedById String?
+  changeNote  String?
+  createdAt   DateTime @default(now())
+
+  @@map("incident_status_history")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  entityType  String
+  entityId    String
+  action      String
+  oldValue    Json?
+  newValue    Json?
+  changedById String?
+  createdAt   DateTime @default(now())
+
+  changedBy User? @relation("AuditChangedBy", fields: [changedById], references: [id])
+
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  type      String
+  isRead    Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Announcement {
+  id        String    @id @default(uuid())
+  senderId  String
+  title     String
+  message   String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+  isActive  Boolean   @default(true)
+
+  sender User             @relation("AnnouncementSender", fields: [senderId], references: [id])
+  reads  AnnouncementRead[]
+
+  @@index([createdAt])
+  @@map("announcements")
+}
+
+model AnnouncementRead {
+  id             String    @id @default(uuid())
+  announcementId String
+  userId         String
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId, readAt])
+  @@map("announcement_reads")
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("device_tokens")
+}
+
+model GeofenceAlert {
+  id              String   @id @default(uuid())
+  employeeId      String
+  managerId       String
+  attendanceLogId String   @unique
+  latitude        Float
+  longitude       Float
+  accuracyMeters  Float
+  distanceMeters  Float
+  radiusMeters    Int
+  status          String   @default("open")
+  createdAt       DateTime @default(now())
+
+  employee      Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  manager       User          @relation("GeofenceAlertManager", fields: [managerId], references: [id], onDelete: Restrict)
+  attendanceLog AttendanceLog @relation(fields: [attendanceLogId], references: [id], onDelete: Cascade)
+
+  @@index([managerId, createdAt])
+  @@map("geofence_alerts")
+}
